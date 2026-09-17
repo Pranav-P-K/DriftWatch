@@ -4,17 +4,20 @@ services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
     container_name: zookeeper
+    mem_limit: 256m
     ports:
       - "2181:2181"
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      KAFKA_JVM_PERFORMANCE_OPTS: "-Xmx128m -Xms64m"
     networks:
       - driftwatch-net
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
+    mem_limit: 768m
     depends_on:
       - zookeeper
     ports:
@@ -23,23 +26,26 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+      KAFKA_HEAP_OPTS: "-Xmx384m -Xms128m"
     networks:
       - driftwatch-net
 
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     container_name: namenode
+    mem_limit: 640m
     ports:
       - "9870:9870"
       - "9000:9000"
     environment:
       CLUSTER_NAME: mlops-cluster
       CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      HADOOP_HEAPSIZE: "384"
     volumes:
       - hadoop_namenode:/hadoop/dfs/name
     networks:
@@ -48,11 +54,13 @@ services:
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
     container_name: datanode
+    mem_limit: 512m
     depends_on:
       - namenode
     environment:
       SERVICE_PRECONDITION: "namenode:9870"
       CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      HADOOP_HEAPSIZE: "256"
     volumes:
       - hadoop_datanode:/hadoop/dfs/data
     networks:
