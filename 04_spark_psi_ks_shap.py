@@ -27,6 +27,20 @@ from pyspark.sql.types import (
     StructType, StructField, StringType, DoubleType, IntegerType
 )
 
+# Ensure environment variables are configured for PySpark & Hadoop on Windows
+if "HADOOP_HOME" not in os.environ and os.path.exists(r"c:\hadoop"):
+    os.environ["HADOOP_HOME"] = r"c:\hadoop"
+    os.environ["PATH"] = os.path.join(r"c:\hadoop", "bin") + os.pathsep + os.environ.get("PATH", "")
+
+if "JAVA_HOME" not in os.environ:
+    jdk_path = r"C:\Users\krppr\.jdks\openjdk-21"
+    if os.path.exists(jdk_path):
+        os.environ["JAVA_HOME"] = jdk_path
+        os.environ["PATH"] = os.path.join(jdk_path, "bin") + os.pathsep + os.environ.get("PATH", "")
+
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
+
 # Base Paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_DIR = os.path.join(BASE_DIR, "profiles")
@@ -246,7 +260,7 @@ def main():
         )
 
     # Start Micro-batch Streaming Query
-    checkpoint_dir = os.path.join(BASE_DIR, "checkpoints", "psi_engine")
+    checkpoint_dir = os.path.abspath(os.path.join(BASE_DIR, "checkpoints", "psi_engine")).replace("\\", "/")
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     print("[*] Launching foreachBatch streaming query (batch interval: 30s)...")
