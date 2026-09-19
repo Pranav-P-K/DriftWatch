@@ -52,20 +52,21 @@ def load_resources(max_records=3000, skip_train=220000):
     print(f"[*] Loading baseline model from {MODEL_PATH}...")
     model = joblib.load(MODEL_PATH)
 
-    print(f"[*] Streaming {max_records:,} test records from {DATASET_PATH} (skipping first {skip_train:,} rows)...")
-    records = []
+    print(f"[*] Streaming test records from {DATASET_PATH} (skipping first {skip_train:,} rows)...")
+    normal_records = []
+    fraud_records = []
     with open(DATASET_PATH, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         count = 0
         for row in reader:
             count += 1
             if count > skip_train:
-                records.append(row)
-                if len(records) >= max_records:
-                    break
+                if row["Class"] == "1":
+                    fraud_records.append(row)
+                elif len(normal_records) < max_records:
+                    normal_records.append(row)
 
-    fraud_count = sum(1 for r in records if r["Class"] == "1")
-    print(f"[*] Loaded {len(records):,} test records into streaming pool ({fraud_count} frauds)")
+    print(f"[*] Loaded {len(normal_records):,} normal & {len(fraud_records):,} fraud test records into streaming pool")
 
     # Load feature statistics for drift injection
     feature_stats = {}
@@ -81,7 +82,7 @@ def load_resources(max_records=3000, skip_train=220000):
     # All feature columns in training order
     feature_cols = [f"V{i}" for i in range(1, 29)] + ["Amount"]
 
-    return model, records, feature_stats, feature_cols
+    return model, normal_records, fraud_records, feature_stats, feature_cols
 
 
 def connect_kafka(bootstrap_servers, retries=5, delay=3):
@@ -150,7 +151,7 @@ def apply_drift(features: dict, phase: str, stats: dict) -> dict:
 
 def main():
     args = parse_args()
-    model, records, stats, feature_cols = load_resources()
+    model, normal_records, fraud_records, stats, feature_cols = load_resources()
     producer = connect_kafka(args.bootstrap_servers)
 
     interval = 1.0 / args.rate
@@ -158,7 +159,8 @@ def main():
     start_time = time.time()
     event_count = 0
     record_idx = 0
-    total_records = len(records)
+    fraud_idx = 0
+    normal_idx = 0
 
     print("\n" + "=" * 65)
     print("DriftWatch Live Traffic Generator Initialized")
@@ -181,8 +183,13 @@ def main():
             else:
                 phase = "SEVERE DRIFT"
 
-            # Fetch record (cycle through pool if exhausted)
-            row = records[record_idx % total_records]
+            # Interleave fraud records (approx 10% rate) to enable streaming F1 score tracking
+            if record_idx % 10 == 0 and len(fraud_records) > 0:
+                row = fraud_records[fraud_idx % len(fraud_records)]
+                fraud_idx += 1
+            else:
+                row = normal_records[normal_idx % len(normal_records)]
+                normal_idx += 1
             record_idx += 1
 
             true_label = int(row["Class"])
@@ -199,14 +206,7 @@ def main():
             event_payload = {
                 "event_id": str(uuid.uuid4()),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "features": {
-                    "V14": round(drifted_features["V14"], 6),
-                    "V4": round(drifted_features["V4"], 6),
-                    "V12": round(drifted_features["V12"], 6),
-                    "V10": round(drifted_features["V10"], 6),
-                    "V11": round(drifted_features["V11"], 6),
-                    "Amount": round(drifted_features["Amount"], 2)
-                },
+                "features": {c: round(float(drifted_features[c]), 6) for c in feature_cols},
                 "predicted_label": pred_label,
                 "true_label": true_label,
                 "model_version": "v1"
