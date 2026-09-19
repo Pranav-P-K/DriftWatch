@@ -39,6 +39,7 @@ def parse_args():
     parser.add_argument("--topic", type=str, default="ml-inference-raw-events", help="Kafka topic name")
     parser.add_argument("--rate", type=float, default=10.0, help="Target events emitted per second (default: 10)")
     parser.add_argument("--phase-seconds", type=float, default=60.0, help="Duration of each drift phase in seconds (default: 60s)")
+    parser.add_argument("--phase", type=str, default=None, choices=["NORMAL", "MILD DRIFT", "SEVERE DRIFT"], help="Force a fixed drift phase")
     parser.add_argument("--max-events", type=int, default=None, help="Stop after N events (default: infinite)")
     return parser.parse_args()
 
@@ -175,8 +176,10 @@ def main():
         while True:
             elapsed = time.time() - start_time
 
-            # Determine drift phase based on elapsed time
-            if elapsed < p_duration:
+            # Determine drift phase based on elapsed time (or forced argument)
+            if args.phase:
+                phase = args.phase
+            elif elapsed < p_duration:
                 phase = "NORMAL"
             elif elapsed < 2 * p_duration:
                 phase = "MILD DRIFT"

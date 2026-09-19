@@ -23,6 +23,7 @@ import json
 import pickle
 import csv
 import warnings
+import subprocess
 from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
@@ -58,6 +59,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROFILES_DIR = os.path.join(BASE_DIR, "profiles")
 LOGS_DIR = os.path.join(BASE_DIR, "logs")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
+LAKE_DIR = os.path.join(BASE_DIR, "lake", "raw_inferences")
 
 BASELINE_PROFILE_PATH = os.path.join(PROFILES_DIR, "baseline_profile.json")
 SHAP_BASELINE_PATH = os.path.join(PROFILES_DIR, "shap_baseline.json")
@@ -71,6 +73,7 @@ ALERTS_LOG_PATH = os.path.join(LOGS_DIR, "drift_alerts.log")
 
 # Ensure required directories exist
 os.makedirs(LOGS_DIR, exist_ok=True)
+os.makedirs(LAKE_DIR, exist_ok=True)
 
 # Load Baseline Profiles & Artifacts
 if not os.path.exists(BASELINE_PROFILE_PATH):
@@ -250,6 +253,9 @@ def process_micro_batch(batch_df, batch_id):
 
     log_shap_drift(batch_id, timestamp_str, shap_drift_results)
 
+    # 4. Sink to Parquet Data Lake and Mirror to HDFS
+    sink_to_lake_and_hdfs(pdf, batch_id)
+
 
 def log_model_accuracy(batch_id, timestamp, count, model_version, fraud_f1, macro_f1, acc):
     file_exists = os.path.exists(ACCURACY_LOG_PATH)
@@ -283,6 +289,43 @@ def log_psi_results(psi_dict, ks_dict, batch_id, timestamp, count):
             writer.writerow([timestamp, batch_id, count, feat, round(psi_val, 5), round(ks_stat, 5), round(ks_pval, 6), is_drift])
 
 
+RETRAIN_TRIGGERED = False
+
+
+def trigger_retraining(feature, psi, ks_pvalue, batch_id):
+    global RETRAIN_TRIGGERED
+    if RETRAIN_TRIGGERED:
+        print(f"[*] Retraining already dispatched; skipping duplicate trigger for batch {batch_id}.")
+        return
+    RETRAIN_TRIGGERED = True
+    print("\n" + "!" * 70)
+    print(f"[!] TRIGGERING CLOSED-LOOP RETRAINING WORKER")
+    print(f"    Cause: Sustained drift on {feature} (PSI={psi:.4f}, KS p={ks_pvalue:.2e})")
+    print("    Executing: python 05_retrain_job.py")
+    print("!" * 70 + "\n")
+    try:
+        retrain_script = os.path.join(BASE_DIR, "05_retrain_job.py")
+        subprocess.Popen([sys.executable, retrain_script])
+    except Exception as e:
+        print(f"[!] Failed to launch retraining job: {e}")
+
+
+def sink_to_lake_and_hdfs(pdf, batch_id):
+    try:
+        ts = int(datetime.now(timezone.utc).timestamp())
+        fname = f"batch_{batch_id}_{ts}.parquet"
+        local_path = os.path.join(LAKE_DIR, fname)
+        pdf.to_parquet(local_path, index=False)
+        print(f"[*] Sunk {len(pdf)} records to Data Lake: {fname}")
+
+        # Mirror to HDFS /lake/raw_inferences/
+        cmd = f'docker cp "{local_path}" namenode:/tmp/{fname} && docker exec namenode hdfs dfs -put -f /tmp/{fname} /lake/raw_inferences/ && docker exec namenode rm -f /tmp/{fname}'
+        subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[+] Synced {fname} to HDFS /lake/raw_inferences/")
+    except Exception as e:
+        print(f"[!] Data lake sink error: {e}")
+
+
 def log_alert(feature, psi, ks_pvalue, batch_id, timestamp):
     payload = {
         "alert_type": "SUSTAINED_DUAL_DRIFT_CONFIRMED",
@@ -295,6 +338,9 @@ def log_alert(feature, psi, ks_pvalue, batch_id, timestamp):
     }
     with open(ALERTS_LOG_PATH, "a") as f:
         f.write(json.dumps(payload) + "\n")
+    
+    # Trigger automated retraining
+    trigger_retraining(feature, psi, ks_pvalue, batch_id)
 
 
 def main():
@@ -361,7 +407,7 @@ def main():
     query = parsed_df.writeStream \
         .foreachBatch(process_micro_batch) \
         .outputMode("append") \
-        .trigger(processingTime="30 seconds") \
+        .trigger(processingTime="10 seconds") \
         .option("checkpointLocation", checkpoint_dir) \
         .start()
 
