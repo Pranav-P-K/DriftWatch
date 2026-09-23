@@ -270,8 +270,35 @@ def main():
 
     if f1_v2 >= f1_v1 - 0.05:
         print("\n[PROMOTION GRANTED] Candidate model successfully recovered performance on drifted distribution!")
+        
+        # 1. Standard ONNX Serialization (replacing pickle)
+        onnx_retrained_path = RETRAINED_MODEL_PATH.replace(".pkl", ".onnx")
+        try:
+            import onnx
+            from skl2onnx import to_onnx
+            dummy = np.zeros((1, len(ALL_FEATURE_COLS)), dtype=np.float32)
+            onnx_model = to_onnx(retrained_model, dummy, target_opset=15)
+            with open(onnx_retrained_path, "wb") as f:
+                f.write(onnx_model.SerializeToString())
+            onnx.checker.check_model(onnx_model)
+            print(f"[+] Saved ONNX model artifact to {onnx_retrained_path} ({os.path.getsize(onnx_retrained_path)/1024:.1f} KB)")
+        except Exception as e:
+            print(f"[!] Warning: ONNX export encountered note ({e}). Saving joblib as compatibility fallback.")
+
         joblib.dump(retrained_model, RETRAINED_MODEL_PATH)
         print(f"[+] Saved serialized model artifact to {RETRAINED_MODEL_PATH}")
+
+        # 2. Dynamic Zero-Downtime Hot-Reloading trigger to Model Serving Microservice
+        try:
+            import requests
+            reload_resp = requests.post("http://127.0.0.1:8000/reload", json={
+                "model_name": "creditcard",
+                "model_file": "retrained_model.onnx"
+            }, timeout=2.0)
+            if reload_resp.status_code == 200:
+                print("[+] Model Serving Service: ZERO-DOWNTIME HOT-RELOAD SUCCESSFUL!")
+        except Exception:
+            print("[*] Model Serving Service (port 8000) not active; ONNX artifact ready on disk.")
 
         update_registry(metrics, len(X_train))
         log_retrain_event(metrics, status="SUCCESS")
