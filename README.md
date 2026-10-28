@@ -6,19 +6,7 @@
 [![Hadoop](https://img.shields.io/badge/Hadoop%20HDFS-3.2-yellow.svg)](https://hadoop.apache.org/)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28-red.svg)](https://streamlit.io/)
 
-> **Big Data Analytics (VIT SEM 7)**
 > A production-grade distributed streaming ML observability and automated closed-loop retraining pipeline detecting concept and feature drift in real-time.
-
----
-
-## 👥 Team & Roles
-
-| Member | Reg. No. | Role | Responsibilities |
-|---|---|---|---|
-| **Muthuselvan B** | 23BLC1145 | Data Pipeline Lead | Kafka Producer, Drift Simulation, Baseline Profiling |
-| **Sinthana P** | 23BLC1160 | Observability & Viz Lead | Streamlit Real-Time Dashboard, Grafana & InfluxDB Setup |
-| **Pranav P K** | 23BLC1268 | MLOps & Spark Engineer | PySpark Structured Streaming, PSI + KS-Test + SHAP Drift |
-| **Hasith Anton M A** | 23BLC1312 | Integration & DevOps Lead | Docker Infrastructure, HDFS Sinks, Closed-Loop Retraining |
 
 ---
 
@@ -86,16 +74,3 @@ python 01_train_model.py
 - Initializes `models/model_registry.json`.
 
 ---
-
-## 📊 Current Results & Benchmarks
-
-| Milestone | Status | Details |
-|---|---|---|
-| **Day 1: Infrastructure & Baseline** |  Completed | Docker cluster healthy, Kafka topic created, HDFS initialized, baseline model trained ($F_1 = 0.8457$, Precision $= 0.9610$). |
-| **Day 2: Baseline Profiling & SHAP** | ⏳ Scheduled | Extract top 5 SHAP features, decile bins, and baseline samples. |
-| **Day 3: Kafka Producer with Drift** | ⏳ Scheduled | 3-phase live traffic simulator. |
-| **Day 4: Spark Dual-Drift Engine** | ⏳ Scheduled | Streaming PSI + KS-test dual confirmation. |
-| **Day 5: SHAP Drift & F1 Tracking** | ⏳ Scheduled | Feature attribution drift + live accuracy correlation. |
-| **Day 6: Closed-Loop Retraining** | ⏳ Scheduled | HDFS Parquet ingestion + automatic retraining proof. |
-| **Day 7: Streamlit & Grafana** | ⏳ Scheduled | 6-panel operational observability dashboard. |
-| **Day 8: Final Demo & Polish** | ⏳ Scheduled | Screen recordings, documentation, and viva prep. |
